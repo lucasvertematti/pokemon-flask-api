@@ -1,0 +1,126 @@
+
+Estrutura de Pastas:
+
+/pokemon_api
+├── app.py
+├── config.py
+├── auth.py
+├── pokemon.py
+├── tests/
+│   └── test_app.py
+├── Dockerfile
+├── requirements.txt
+└── README.md
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+Arquivo de configuração
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    SECRET_KEY = os.getenv('SECRET_KEY', 'your_default_secret')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your_default_jwt_secret')
+    POKEAPI_BASE_URL = 'https://pokeapi.co/api/v2'
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+Autenticação JWT
+
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token
+from werkzeug.security import check_password_hash
+
+auth_bp = Blueprint('auth', __name__)
+
+# Simulação de usuário e senha (em um cenário real, use banco de dados)
+users = {
+    "admin": {"password": "pbkdf2:sha256:150000$xyz123"}  # Hash da senha
+}
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    user = users.get(username)
+    if user and check_password_hash(user['password'], password):
+        token = create_access_token(identity=username)
+        return jsonify(access_token=token), 200
+    return jsonify({"msg": "Invalid credentials"}), 401
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+Lógica dos Pokémon
+
+import requests
+from flask import Blueprint, jsonify
+from config import Config
+import random
+
+pokemon_bp = Blueprint('pokemon', __name__)
+
+def fetch_pokemon_data(pokemon_name):
+    url = f"{Config.POKEAPI_BASE_URL}/pokemon/{pokemon_name.lower()}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    return None
+
+@pokemon_bp.route('/type/<pokemon_name>', methods=['GET'])
+def get_pokemon_type(pokemon_name):
+    data = fetch_pokemon_data(pokemon_name)
+    if data:
+        types = [t['type']['name'] for t in data['types']]
+        return jsonify({"name": pokemon_name, "types": types})
+    return jsonify({"error": "Pokémon not found"}), 404
+
+@pokemon_bp.route('/random/<type_name>', methods=['GET'])
+def get_random_pokemon(type_name):
+    url = f"{Config.POKEAPI_BASE_URL}/type/{type_name.lower()}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        pokemon_list = response.json()['pokemon']
+        random_pokemon = random.choice(pokemon_list)['pokemon']['name']
+        return jsonify({"pokemon": random_pokemon})
+    return jsonify({"error": "Type not found"}), 404
+
+@pokemon_bp.route('/longest/<type_name>', methods=['GET'])
+def get_longest_pokemon_name(type_name):
+    url = f"{Config.POKEAPI_BASE_URL}/type/{type_name.lower()}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        pokemon_list = response.json()['pokemon']
+        longest_name = max(pokemon_list, key=lambda p: len(p['pokemon']['name']))['pokemon']['name']
+        return jsonify({"longest_name": longest_name})
+    return jsonify({"error": "Type not found"}), 404
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+Aplicativo Principal
+
+from flask import Flask
+from flask_jwt_extended import JWTManager
+from pokemon import pokemon_bp
+from auth import auth_bp
+from config import Config
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+jwt = JWTManager(app)
+
+# Registro de Blueprints
+app.register_blueprint(pokemon_bp, url_prefix='/pokemon')
+app.register_blueprint(auth_bp, url_prefix='/auth')
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+
